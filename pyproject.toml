@@ -10,11 +10,11 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.13"
 lark = "^1.1.9"
 
 [tool.poetry.dependencies.wizwalker]
-git = "https://github.com/wizwalker/wizwalker.git"
+git = "https://codeberg.org/wizwalker/wizwalker.git"
 branch = "development"
 
 [tool.poetry.dev-dependencies]
