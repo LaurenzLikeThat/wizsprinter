@@ -42,7 +42,7 @@ class CombatConfigGenerator(BaseCombatBackend):
             MoveConfig(
                 move=Move(
                     card=TemplateSpell(requirements=[SpellType.type_damage, SpellType.type_aoe]),
-                    enchant=TemplateSpell(requirements=[SpellType.type_enchant], optional=True)
+                    enchant=TemplateSpell(requirements=[SpellType.type_enchant, SpellType.type_mod_damage], optional=True)
                 )
             )
         )
@@ -52,7 +52,7 @@ class CombatConfigGenerator(BaseCombatBackend):
             MoveConfig(
                 move=Move(
                     card=TemplateSpell(requirements=[SpellType.type_damage]),
-                    enchant=TemplateSpell(requirements=[SpellType.type_enchant], optional=True)
+                    enchant=TemplateSpell(requirements=[SpellType.type_enchant, SpellType.type_mod_damage], optional=True)
                 ),
                 target=TargetData(TargetType.type_enemy)
             )
