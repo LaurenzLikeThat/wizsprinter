@@ -292,6 +292,15 @@ async def is_req_satisfied(effect: DynamicSpellEffect, req: SpellType, template:
         
         case SpellType.type_dispel:
             is_satisfied = eff_type is SpellEffects.dispel
+
+        case SpellType.type_mod_damage:
+            is_satisfied = (eff_type is SpellEffects.modify_card_outgoing_damage or eff_type is SpellEffects.modify_card_damage or eff_type is SpellEffects.modify_card_damage_by_rank) and target is EffectTarget.spell
+
+        case SpellType.type_mod_heal:
+            is_satisfied = eff_type is SpellEffects.modify_card_outgoing_heal and target is EffectTarget.spell
+
+        case SpellType.type_mod_pierce:
+            is_satisfied = eff_type is SpellEffects.modify_card_outgoing_armor_piercing and target is EffectTarget.spell
         
         case _:
             # This should never happen

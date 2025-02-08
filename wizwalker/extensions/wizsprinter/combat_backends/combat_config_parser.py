@@ -20,7 +20,7 @@ def get_sprinty_grammar():
             move_pass: "pass"
             
             spell: any_spell | words | string
-            enchant: _open_bracket (words | string) _close_bracket
+            enchant: _open_bracket (any_spell | words | string) _close_bracket
             
             target: (target_type | target_multi)
             target_type: target_self | target_boss | target_enemy | target_ally | target_aoe | target_named
@@ -38,7 +38,7 @@ def get_sprinty_grammar():
             auto: _spaced{"auto"}
             
             any_spell: _spaced{"any"} _less_than spell_type (_and spell_type)* _greater_than
-            spell_type: spell_damage | spell_aoe | spell_heal_self | spell_heal_other | spell_heal | spell_blade | spell_charm | spell_ward | spell_trap | spell_enchant | spell_aura | spell_global | spell_polymorph | spell_shadow | spell_shadow_creature | spell_pierce | spell_prism | spell_dispel | spell_inc_damage | spell_out_damage | spell_inc_heal | spell_out_heal
+            spell_type: spell_damage | spell_aoe | spell_heal_self | spell_heal_other | spell_heal | spell_blade | spell_charm | spell_ward | spell_trap | spell_enchant | spell_aura | spell_global | spell_polymorph | spell_shadow | spell_shadow_creature | spell_pierce | spell_prism | spell_dispel | spell_inc_damage | spell_out_damage | spell_inc_heal | spell_out_heal | spell_mod_damage | spell_mod_heal | spell_mod_pierce
             spell_damage: _spaced{"damage"}
             spell_aoe: _spaced{"aoe"}
             spell_heal: _spaced{"heal"}
@@ -61,6 +61,9 @@ def get_sprinty_grammar():
             spell_out_damage: _spaced{"out_damage"}
             spell_inc_heal: _spaced{"inc_heal"}
             spell_out_heal: _spaced{"out_heal"}
+            spell_mod_damage: _spaced{"mod_damage"}
+            spell_mod_heal: _spaced{"mod_heal"}
+            spell_mod_pierce: _spaced{"mod_pierce"}
             
             expression: INT
             
@@ -240,6 +243,15 @@ class TreeToConfig(Transformer):
     
     def spell_out_heal(self, _):
         return SpellType.type_out_heal
+    
+    def spell_mod_damage(self, _):
+        return SpellType.type_mod_damage
+    
+    def spell_mod_heal(self, _):
+        return SpellType.type_mod_heal
+    
+    def spell_mod_pierce(self, _):
+        return SpellType.type_mod_pierce
 
     INT = int
 

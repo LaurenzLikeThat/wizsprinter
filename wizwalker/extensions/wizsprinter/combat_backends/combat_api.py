@@ -34,6 +34,10 @@ class SpellType(Enum):
     type_pierce = auto()
     type_prism = auto()
     type_dispel = auto()
+    #Fix for enchants
+    type_mod_damage = auto()
+    type_mod_heal = auto()
+    type_mod_pierce = auto()
 
 
 class Spell:
