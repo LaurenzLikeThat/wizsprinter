@@ -12,14 +12,32 @@ class TargetType(Enum):
 
 class SpellType(Enum):
     type_damage = auto()
+    type_inc_damage = auto()
+    type_out_damage = auto()
     type_aoe = auto()
     type_heal = auto()
+    type_inc_heal = auto()
+    type_out_heal = auto()
     type_heal_self = auto()
     type_heal_other = auto()
     type_blade = auto()
-    type_shield = auto()
+    type_charm = auto()
+    type_ward = auto()
     type_trap = auto()
     type_enchant = auto()
+    #Slack added types
+    type_aura = auto()
+    type_global = auto()
+    type_polymorph = auto()
+    type_shadow = auto()
+    type_shadow_creature = auto()
+    type_pierce = auto()
+    type_prism = auto()
+    type_dispel = auto()
+    #Fix for enchants
+    type_mod_damage = auto()
+    type_mod_heal = auto()
+    type_mod_pierce = auto()
 
 
 class Spell:

@@ -3,7 +3,7 @@ from typing import *
 from wizwalker import XYZ, Keycode, MemoryReadError
 from wizwalker.client import Client
 from wizwalker.memory import DynamicClientObject, ClientObject
-
+from wizwalker.constants import Primitive
 
 class SprintyClient(Client):
     async def remove_excluded_entities_from(self, entities: List[DynamicClientObject], excluded_ids: Set[int] = None) \
@@ -67,7 +67,7 @@ class SprintyClient(Client):
                 behaviors = await e.inactive_behaviors()
                 for b in behaviors:
                     if (await b.read_type_name()) == "NPCBehavior":
-                        return await b.read_value_from_offset(288, "bool")
+                        return await b.read_value_from_offset(288, Primitive.bool)
                 return False
             except (ValueError, MemoryReadError):
                 return False
@@ -197,7 +197,7 @@ class SprintyClient(Client):
 
     async def goto_closest_mob(self, only_safe: bool = False, excluded_ids: Set[int] = None) -> bool:
         return await self.goto_closest_of(await self.get_mob(excluded_ids), only_safe)
-    
+
     async def calc_health_ratio(self) -> float:
         """Simply returns current health divided by max health"""
         return await self.stats.current_hitpoints() / await self.stats.max_hitpoints()

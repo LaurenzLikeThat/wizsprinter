@@ -5,15 +5,337 @@ import wizwalker
 from wizwalker.combat import CombatHandler
 from wizwalker.combat import CombatMember
 from wizwalker.combat.card import CombatCard
-from wizwalker.memory import EffectTarget, SpellEffects
+from wizwalker.memory import EffectTarget, SpellEffects, DynamicSpellEffect
+from wizwalker.memory.memory_objects.spell_effect import CompoundSpellEffect, ConditionalSpellEffect, HangingConversionSpellEffect
 
 from .combat_backends.combat_config_parser import TargetType, TargetData, MoveConfig, TemplateSpell \
     , NamedSpell, SpellType, Spell
 from .combat_backends.backend_base import BaseCombatBackend
 
+from enum import Enum, auto
+
+
+async def get_inner_card_effects(card: CombatCard) -> List[DynamicSpellEffect]:
+    effects = await card.get_spell_effects()
+    output_effects: List[DynamicSpellEffect] = []
+
+    for effect in effects:
+        effect_class = type(effect)
+        if issubclass(effect_class, CompoundSpellEffect):
+            subeffects = await effect.effects_list()
+            output_effects += subeffects
+
+        elif issubclass(effect_class, ConditionalSpellEffect):
+            issubclass(effect_class, ConditionalSpellEffect)
+            output_effects += [await elem.effect() for elem in await effect.elements()]
+
+        elif issubclass(effect_class, HangingConversionSpellEffect):
+            output_effects += await effect.output_effect()
+
+        else:
+            output_effects.append(effect)
+
+    return output_effects
+
+
+async def is_enchantable(card: CombatCard) -> bool:
+    return not any((
+        await card.is_enchanted(),
+        await card.is_enchanted_from_item_card(),
+        await card.is_treasure_card(),
+        await card.is_item_card(),
+        await card.is_cloaked(),
+    ))
+
+
+damage_effects = {
+    SpellEffects.damage,
+    SpellEffects.damage_no_crit,
+    SpellEffects.damage_over_time,
+    SpellEffects.damage_per_total_pip_power,
+    SpellEffects.deferred_damage,
+    SpellEffects.instant_kill,
+    SpellEffects.divide_damage,
+    SpellEffects.steal_health,
+    SpellEffects.max_health_damage
+}
+
+buff_damage_effects = {
+    SpellEffects.modify_incoming_damage,
+    SpellEffects.modify_incoming_damage_flat,
+    SpellEffects.modify_incoming_damage_over_time,
+    SpellEffects.modify_outgoing_damage,
+    SpellEffects.modify_outgoing_damage_flat
+}
+
+buff_heal_effects = {
+    SpellEffects.modify_outgoing_heal,
+    SpellEffects.modify_outgoing_heal_flat,
+    SpellEffects.modify_incoming_heal,
+    SpellEffects.modify_incoming_heal_flat,
+    SpellEffects.modify_incoming_heal_over_time
+}
+
+heal_effects = {
+    SpellEffects.heal,
+    SpellEffects.heal_by_ward,
+    SpellEffects.heal_over_time,
+    SpellEffects.heal_percent,
+    SpellEffects.max_health_heal
+}
+charm_effects = {
+    SpellEffects.modify_outgoing_armor_piercing,
+    SpellEffects.modify_outgoing_damage,
+    SpellEffects.modify_outgoing_damage_flat,
+    SpellEffects.modify_outgoing_heal,
+    SpellEffects.modify_outgoing_heal_flat,
+    SpellEffects.cloaked_charm,
+    SpellEffects.modify_accuracy
+}
+ward_effects = {
+    SpellEffects.modify_incoming_armor_piercing,
+    SpellEffects.modify_incoming_damage,
+    SpellEffects.modify_incoming_damage_flat,
+    SpellEffects.modify_incoming_damage_over_time,
+    SpellEffects.modify_incoming_heal,
+    SpellEffects.modify_incoming_heal_flat,
+    SpellEffects.modify_incoming_heal_over_time
+}
+
+ally_targets = {
+    EffectTarget.friendly_minion,
+    EffectTarget.friendly_single,
+    EffectTarget.friendly_single_not_me,
+    EffectTarget.friendly_team,
+    EffectTarget.friendly_team_all_at_once,
+    EffectTarget.multi_target_friendly,
+    EffectTarget.self
+}
+
+enemy_targets = {
+    EffectTarget.at_least_one_enemy,
+    EffectTarget.enemy_single,
+    EffectTarget.enemy_team,
+    EffectTarget.enemy_team_all_at_once,
+    EffectTarget.multi_target_enemy,
+    EffectTarget.preselected_enemy_single
+}
+
+aoe_targets = {
+    EffectTarget.enemy_team,
+    EffectTarget.enemy_team_all_at_once,
+    EffectTarget.friendly_team,
+    EffectTarget.friendly_team_all_at_once
+}
+
+class ReqSatisfaction(Enum):
+    true = auto()
+    false = auto()
+    reject_card = auto()
+
+
+def get_req_status(req_statement: bool) -> ReqSatisfaction:
+    if req_statement:
+        return ReqSatisfaction.true
+    
+    return ReqSatisfaction.false
+
+
+async def is_req_satisfied(effect: DynamicSpellEffect, req: SpellType, template: TemplateSpell, allow_aoe: bool = False) -> bool:
+    eff_type = await effect.effect_type()
+    target = await effect.effect_target()
+    param = await effect.effect_param()
+    rounds = await effect.num_rounds()
+
+    _aoe_targets = aoe_targets
+    if not allow_aoe:
+        _aoe_targets = {}
+
+
+    def is_blade() -> bool:
+        return all((
+            eff_type in charm_effects,
+            target in ally_targets.difference(_aoe_targets),
+            param > 0,
+            rounds == 0,
+        ))
+
+    def is_charm() -> bool:
+        return all((
+            eff_type in charm_effects,
+            target in enemy_targets.difference(_aoe_targets),
+            param < 0,
+            rounds == 0,
+        ))
+
+    def is_ward() -> bool:
+        return all((
+            eff_type in ward_effects,
+            target in ally_targets.difference(_aoe_targets),
+            param < 0,
+            rounds == 0,
+        ))
+
+    def is_trap() -> bool:
+        return all((
+            eff_type in ward_effects,
+            target in enemy_targets.difference(_aoe_targets),
+            param > 0,
+            rounds == 0,
+        ))
+    
+    def is_aura() -> bool:
+        return all((
+            eff_type in charm_effects.union(ward_effects),
+            target is EffectTarget.self,
+            rounds > 0,
+        ))
+    
+    def is_global() -> bool:
+        return all((
+            eff_type in charm_effects.union(ward_effects),
+            target is EffectTarget.target_global,
+        ))
+    
+    def hits_enemy() -> bool:
+        return target in enemy_targets.difference(_aoe_targets)
+    
+    def hits_ally() -> bool:
+        return target in ally_targets.difference(_aoe_targets)
+    
+    def is_effect_beneficial(neg_is_good: bool = False) -> bool:
+        if is_global():
+            return True
+
+        if neg_is_good:
+            return (hits_ally() and param < 0) or (hits_enemy() and param > 0)
+        
+        return (hits_ally() and param > 0) or (hits_enemy() and param < 0)
+    
+
+    def is_damage() -> bool:
+        return eff_type in damage_effects and hits_enemy() and is_effect_beneficial(True)
+    
+    def is_heal() -> bool:
+        return eff_type in heal_effects and hits_ally() and is_effect_beneficial()
+
+    if is_damage() and SpellType.type_damage not in template.requirements:
+        return ReqSatisfaction.reject_card
+    
+    if is_heal() and SpellType.type_heal not in template.requirements:
+        return ReqSatisfaction.reject_card
+
+    is_satisfied = True
+    match req:
+        case SpellType.type_damage:
+            is_satisfied = is_damage()
+        
+        case SpellType.type_inc_damage:
+            is_satisfied = eff_type in (SpellEffects.modify_incoming_damage, SpellEffects.modify_incoming_damage_flat, SpellEffects.modify_incoming_damage_over_time) and is_effect_beneficial(True)
+
+        case SpellType.type_out_damage:
+            is_satisfied = eff_type in (SpellEffects.modify_outgoing_damage, SpellEffects.modify_outgoing_damage_flat) and is_effect_beneficial()
+
+        case SpellType.type_aoe:
+            is_satisfied = target in aoe_targets
+        
+        case SpellType.type_inc_heal:
+            is_satisfied = eff_type in (SpellEffects.modify_incoming_heal, SpellEffects.modify_incoming_heal_flat, SpellEffects.modify_incoming_heal_over_time) and is_effect_beneficial()
+
+        case SpellType.type_out_heal:
+            is_satisfied = eff_type in (SpellEffects.modify_outgoing_heal, SpellEffects.modify_outgoing_heal_flat) and is_effect_beneficial()
+        
+        case SpellType.type_heal:
+            is_satisfied = is_heal()
+        
+        case SpellType.type_heal_self:
+            is_satisfied = eff_type in heal_effects and target in (EffectTarget.self, EffectTarget.friendly_team) and is_effect_beneficial()
+        
+        case SpellType.type_heal_other: #TODO: Figure out why this even exists - slack
+            is_satisfied = eff_type in heal_effects and target in (EffectTarget.friendly_single, EffectTarget.friendly_single_not_me) and is_effect_beneficial()
+        
+        case SpellType.type_blade:
+            is_satisfied = is_blade() and hits_ally()
+        
+        case SpellType.type_charm:
+            is_satisfied = is_charm() and hits_enemy()
+
+        case SpellType.type_ward:
+            is_satisfied = is_ward() and hits_ally()
+        
+        case SpellType.type_trap:
+            is_satisfied = is_trap() and hits_enemy()
+        
+        case SpellType.type_enchant:
+            is_satisfied = target is EffectTarget.spell
+        
+        case SpellType.type_aura:
+            is_satisfied = is_aura()
+
+        case SpellType.type_global:
+            is_satisfied = is_global()
+        
+        case SpellType.type_polymorph:
+            is_satisfied = eff_type is SpellEffects.polymorph
+        
+        case SpellType.type_shadow:
+            is_satisfied = eff_type is SpellEffects.shadow_self
+        
+        case SpellType.type_shadow_creature:
+            is_satisfied = eff_type in (SpellEffects.shadow_creature, SpellEffects.select_shadow_creature_attack_target)
+        
+        case SpellType.type_pierce:
+            is_satisfied = eff_type in (SpellEffects.modify_outgoing_armor_piercing, SpellEffects.modify_incoming_armor_piercing) and is_effect_beneficial()
+        
+        case SpellType.type_prism:
+            is_satisfied = eff_type in (SpellEffects.modify_outgoing_damage_type, SpellEffects.modify_incoming_damage_type)
+        
+        case SpellType.type_dispel:
+            is_satisfied = eff_type is SpellEffects.dispel
+
+        case SpellType.type_mod_damage:
+            is_satisfied = (eff_type is SpellEffects.modify_card_outgoing_damage or eff_type is SpellEffects.modify_card_damage or eff_type is SpellEffects.modify_card_damage_by_rank) and target is EffectTarget.spell
+
+        case SpellType.type_mod_heal:
+            is_satisfied = eff_type is SpellEffects.modify_card_outgoing_heal and target is EffectTarget.spell
+
+        case SpellType.type_mod_pierce:
+            is_satisfied = eff_type is SpellEffects.modify_card_outgoing_armor_piercing and target is EffectTarget.spell
+        
+        case _:
+            # This should never happen
+            is_satisfied = False
+
+    return get_req_status(is_satisfied)
+        
+
+async def does_card_contain_reqs(card: CombatCard, template: TemplateSpell) -> bool:
+    effects = await get_inner_card_effects(card)
+    is_aoe_req = SpellType.type_aoe in template.requirements
+    matched_reqs = 0
+    needed_matches = len(template.requirements)
+
+    for req in template.requirements:
+        for e in effects:
+            req_status = await is_req_satisfied(e, req, template, is_aoe_req)
+            match req_status:
+                case ReqSatisfaction.true:
+                    matched_reqs += 1
+                    break
+                
+                case ReqSatisfaction.reject_card:
+                    break
+
+                case _:
+                    pass
+
+
+    return matched_reqs == needed_matches
+
+
 
 class SprintyCombat(CombatHandler):
-    def __init__(self, client: wizwalker.client.Client, config_provider: BaseCombatBackend):
+    def __init__(self, client: wizwalker.client.Client, config_provider: BaseCombatBackend, handle_mouseless: bool = False):
         super().__init__(client)
         self.client: wizwalker.client.Client = client # to restore autocomplete
         self.config = config_provider
@@ -23,6 +345,7 @@ class SprintyCombat(CombatHandler):
         self.was_pass = False
         self.had_first_round = False
         self.rel_round_offset = 0
+        self.handle_mouseless = handle_mouseless
 
     async def handle_combat(self):
         self.turn_adjust = 0
@@ -188,100 +511,17 @@ class SprintyCombat(CombatHandler):
                 return s
         return None
 
-    async def get_cards_by_template(self, template: TemplateSpell) -> list[CombatCard]:
+    async def get_cards_by_template(self, template: TemplateSpell) -> List[CombatCard]:
         cards = await self.get_castable_cards()
         res = []
-        allow_aoe = SpellType.type_aoe in template.requirements
         for c in cards:
-            fits = True
-            effects = await c.get_spell_effects()
-            c_type = (await c.type_name()).lower()
-            for req in template.requirements:
-                if req is SpellType.type_damage:
-                    for e in effects:
-                        target = await e.effect_target()
-                        eff = await e.effect_type()
-                        if target in (EffectTarget.enemy_team,
-                                      EffectTarget.enemy_team_all_at_once,
-                                      EffectTarget.enemy_single) \
-                                and eff in (SpellEffects.damage,
-                                            SpellEffects.damage_over_time,
-                                            SpellEffects.damage_per_total_pip_power) \
-                                or c_type == "damage":
-                            if target in (EffectTarget.enemy_team, EffectTarget.enemy_team_all_at_once) and allow_aoe:
-                                break
-                            elif target in (EffectTarget.enemy_team, EffectTarget.enemy_team_all_at_once):
-                                continue
-                            else:
-                                break
-                    else:
-                        fits = False
-                elif req is SpellType.type_aoe:
-                    for e in effects:
-                        target = await e.effect_target()
-                        if target in (EffectTarget.enemy_team, EffectTarget.enemy_team_all_at_once,
-                                      EffectTarget.friendly_team, EffectTarget.friendly_team_all_at_once):
-                            break
-                    else:
-                        fits = False
-                elif req is SpellType.type_trap:
-                    for e in effects:
-                        target = await e.effect_target()
-                        et = await e.effect_type()
-                        if et is SpellEffects.modify_incoming_damage and target is EffectTarget.enemy_single:
-                            break
-                    else:
-                        fits = False
-                elif req is SpellType.type_shield:
-                    for e in effects:
-                        target = await e.effect_target()
-                        et = await e.effect_type()
-                        if et is SpellEffects.modify_incoming_damage and target is EffectTarget.friendly_single:
-                            break
-                    else:
-                        fits = False
-                elif req is SpellType.type_blade:
-                    for e in effects:
-                        target = await e.effect_target()
-                        et = await e.effect_type()
-                        if et is SpellEffects.modify_incoming_damage and target is EffectTarget.friendly_single:
-                            break
-                    else:
-                        fits = False
-                elif req is SpellType.type_heal:
-                    for e in await c.get_spell_effects():
-                        if (await e.effect_type()) is SpellEffects.heal:
-                            break
-                    else:
-                        fits = False
-                elif req is SpellType.type_heal_other:
-                    for e in effects:
-                        target = await e.effect_target()
-                        if (target is EffectTarget.friendly_team or target is EffectTarget.friendly_single) and (
-                                await e.effect_type()) is SpellEffects.heal:
-                            break
-                    else:
-                        fits = False
-                elif req is SpellType.type_heal_self:
-                    for e in effects:
-                        target = await e.effect_target()
-                        if (target is EffectTarget.self or target is EffectTarget.friendly_team) and (
-                                await e.effect_type()) is SpellEffects.heal:
-                            break
-                    else:
-                        fits = False
-                elif req is SpellType.type_enchant:
-                    for e in effects:
-                        if await e.effect_target() is EffectTarget.spell:
-                            break
-                    else:
-                        fits = False
-
-                if not fits:
-                    break
-            if fits:
+            if await does_card_contain_reqs(c, template):
                 res.append(c)
+
         return res
+    
+
+
 
     async def get_boss_or_none(self) -> Optional[CombatMember]:
         for m in await self.get_members():
@@ -364,18 +604,24 @@ class SprintyCombat(CombatHandler):
 
         return False
 
-    async def try_get_spell(self, spell: Spell, only_enchants=False) -> Union[CombatCard, str, None]:
+    async def try_get_spell(self, spell: Spell, only_enchants=False, only_enchantable: bool = False) -> Union[CombatCard, str, None]:
         if isinstance(spell, NamedSpell):
             spell: NamedSpell
             if spell.name in ("pass", "none"):
                 return spell.name
+            
             if spell.is_literal:
                 return await self.get_castable_card_named(spell.name, only_enchants)
             else:
                 return await self.get_castable_card_vaguely_named(spell.name, only_enchants)
+
         elif isinstance(spell, TemplateSpell):
             spell: TemplateSpell
             res = await self.get_cards_by_template(spell)
+
+            if only_enchantable:
+                res = [c for c in res if await is_enchantable(c)]
+
             if len(res) > 0:
                 return res[0]
             return None
@@ -383,7 +629,8 @@ class SprintyCombat(CombatHandler):
             raise NotImplementedError("Unknown spell config type")
 
     async def try_execute_config(self, move_config: MoveConfig) -> bool:
-        cur_card = await self.try_get_spell(move_config.move.card)
+        only_enchantable = move_config.move.enchant is not None
+        cur_card = await self.try_get_spell(move_config.move.card, only_enchantable=only_enchantable)
         if cur_card is None:
             return False
 
@@ -396,7 +643,7 @@ class SprintyCombat(CombatHandler):
         if target == False:  # Wouldn't want a None to mess it up
             return False
 
-        if move_config.move.enchant is not None and not await cur_card.is_enchanted():
+        if only_enchantable and not await cur_card.is_enchanted():
             enchant_card = await self.try_get_spell(move_config.move.enchant, only_enchants=True)
             if enchant_card != "none":
                 if enchant_card is not None:
@@ -436,17 +683,16 @@ class SprintyCombat(CombatHandler):
         self.turn_adjust -= 1
 
     async def handle_round(self):
-        try:
-            await self.client.mouse_handler.activate_mouseless()
-        except wizwalker.errors.HookAlreadyActivated:
-            pass
-        
-        try:
-            self.config.attach_combat(self) # For safety. Could probably also do this in handle_combat
+        # try:
+        #     await self.client.mouse_handler.activate_mouseless()
+        # except wizwalker.errors.HookAlreadyActivated:
+        #     pass
+        async with self.client.mouse_handler:
+            self.config.attach_combat(self) # For safety. Could probably also do this in handle_comba
 
             real_round = await self.round_number()
             self.cur_card_count = len(await self.get_cards()) + (await self.get_card_counts())[0]
-
+                
             if not self.had_first_round:
                 current_round = real_round - 1
                 if current_round > 0:
@@ -454,10 +700,9 @@ class SprintyCombat(CombatHandler):
             else:
                 if self.cur_card_count >= self.prev_card_count and not self.was_pass:
                     await self.on_fizzle()
-
             self.was_pass = False
             current_round = (real_round - 1 + self.turn_adjust + self.rel_round_offset)
-
+                        
             # Issue: #3. Need to make sure it's valid
             member: CombatMember = None
             try:
@@ -478,7 +723,6 @@ class SprintyCombat(CombatHandler):
                         round_config = await self.config.get_relative_round(current_round)
                     else:
                         self.rel_round_offset -= 1
-
                     if round_config is not None:
                         for p in round_config.priorities:  # go through rounds priorities
                             if await self.try_execute_config(p):
@@ -488,10 +732,5 @@ class SprintyCombat(CombatHandler):
                     else:  # Very bad. Probably using empty config
                         await self.config.handle_no_cards_given()
 
-            self.had_first_round = True  # might go bad on throw
-            self.prev_card_count = self.cur_card_count
-        finally:
-            try:
-                await self.client.mouse_handler.deactivate_mouseless()
-            except wizwalker.errors.HookNotActive:
-                pass
+                self.had_first_round = True  # might go bad on throw
+                self.prev_card_count = self.cur_card_count

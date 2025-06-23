@@ -3,7 +3,7 @@ from typing import *
 from lark import Lark
 
 from .backend_base import BaseCombatBackend
-from .combat_config_parser import CombatConfig, PriorityLine, get_sprinty_grammar, TreeToConfig
+from .combat_config_parser import CombatConfig, PriorityLine, get_sprinty_grammar, TreeToConfig, Move, MoveConfig
 from ..sprinty_combat import SprintyCombat
 
 class CombatConfigProvider(BaseCombatBackend):
@@ -18,7 +18,7 @@ class CombatConfigProvider(BaseCombatBackend):
 
         parser = Lark(grammar)
         tree = parser.parse(file_contents)
-        return TreeToConfig().transform(tree)
+        return self._expand_config(TreeToConfig().transform(tree))
 
     async def get_real_round(self, r: int) -> Optional[PriorityLine]:
         if r in self.config.specific_rounds:
@@ -32,3 +32,20 @@ class CombatConfigProvider(BaseCombatBackend):
 
     async def handle_no_cards_given(self):
         raise RuntimeError(f"Full config fail! \"{self.filename}\" might be empty or contains only explicit rounds. Consider adding a pass or something else")
+
+    def _expand_config(self, config: CombatConfig) -> CombatConfig:
+        old_rounds = [x for x in config.specific_rounds.values()] + config.infinite_rounds
+        rounds = []
+        for old_round in old_rounds:
+            priorities = []
+            for old_priority in old_round.priorities:
+                if old_priority.move.enchant is None:
+                    priorities.append(old_priority)
+                else:
+                    priorities.append(old_priority)
+                    enchantless_move = Move(old_priority.move.card, None)
+                    enchantless = MoveConfig(enchantless_move, old_priority.target)
+                    priorities.append(enchantless)
+            rounds.append(PriorityLine(priorities, old_round.round))
+
+        return CombatConfig(rounds)
