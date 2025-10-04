@@ -648,12 +648,19 @@ class SprintyCombat(CombatHandler):
             if enchant_card != "none":
                 if enchant_card is not None:
                     # Issue: 5. Casting wasn't that reliable
+                    previous_cards = await self.get_cards()
+                    previous_card_names = [await card.name() for card in previous_cards]
                     pre_enchant_count = len(await self.get_cards())
                     while len(await self.get_cards()) == pre_enchant_count:
                         await enchant_card.cast(cur_card, sleep_time=self.config.cast_time*2)
                         await asyncio.sleep(self.config.cast_time*2) # give it some time for card list to update
 
                     self.cur_card_count -= 1
+                    new_cards = await self.get_cards()
+                    new_card_names = [await card.name() for card in new_cards]
+                    diff = list(set(new_card_names) - set(previous_card_names))
+                    if diff:
+                        move_config.move.card = NamedSpell(name=diff[0], is_literal=True)
 
                 elif enchant_card is None and (isinstance(move_config.move.enchant, TemplateSpell) and not move_config.move.enchant.optional):
                     return False
