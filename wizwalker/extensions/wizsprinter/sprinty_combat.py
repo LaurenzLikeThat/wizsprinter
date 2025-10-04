@@ -644,7 +644,7 @@ class SprintyCombat(CombatHandler):
             return False
 
         if only_enchantable and not await cur_card.is_enchanted():
-            enchant_card = await self.try_get_spell(move_config.move.enchant, only_enchants=True)
+            enchant_card = await self.try_get_spell(move_config.move.enchant, only_enchants=False)
             if enchant_card != "none":
                 if enchant_card is not None:
                     # Issue: 5. Casting wasn't that reliable
