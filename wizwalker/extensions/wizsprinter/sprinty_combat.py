@@ -13,6 +13,7 @@ from .combat_backends.combat_config_parser import TargetType, TargetData, MoveCo
 from .combat_backends.backend_base import BaseCombatBackend
 
 from enum import Enum, auto
+from collections import Counter
 
 
 async def get_inner_card_effects(card: CombatCard) -> List[DynamicSpellEffect]:
@@ -649,7 +650,7 @@ class SprintyCombat(CombatHandler):
                 if enchant_card is not None:
                     # Issue: 5. Casting wasn't that reliable
                     previous_cards = await self.get_cards()
-                    previous_card_names = [await card.name() for card in previous_cards]
+                    previous_card_names = Counter([await card.name() for card in previous_cards])
                     pre_enchant_count = len(await self.get_cards())
                     while len(await self.get_cards()) == pre_enchant_count:
                         await enchant_card.cast(cur_card, sleep_time=self.config.cast_time*2)
@@ -657,8 +658,8 @@ class SprintyCombat(CombatHandler):
 
                     self.cur_card_count -= 1
                     new_cards = await self.get_cards()
-                    new_card_names = [await card.name() for card in new_cards]
-                    diff = list(set(new_card_names) - set(previous_card_names))
+                    new_card_names = Counter([await card.name() for card in new_cards])
+                    diff = list(new_card_names - previous_card_names)
                     if diff:
                         move_config.move.card = NamedSpell(name=diff[0], is_literal=True)
 
