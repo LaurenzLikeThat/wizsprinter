@@ -63,9 +63,10 @@ class TemplateSpell(Spell):
 
 
 class Move:
-    def __init__(self, card: Spell, enchant: Spell = None):
+    def __init__(self, card: Spell, enchant: Spell = None, second_enchant: Spell = None):
         self.card = card
         self.enchant = enchant
+        self.second_enchant = second_enchant
 
     def __repr__(self) -> str:
         return f"Move(card={self.card}, enchant={self.enchant})"

@@ -12,15 +12,16 @@ def get_sprinty_grammar():
             ?start: config
             config: line+
             
-            line: round_specifier? move_config [(_pipe move_config)*]? _NEWLINE?
+            line: round_specifier? move_config [(_pipe move_config)*]? [(_pipe move_config)*]? _NEWLINE?
             
             move_config: move (_at target)?
             
-            move: (move_pass | (spell enchant?))
+            move: (move_pass | (spell enchant? second_enchant?))
             move_pass: "pass"
             
             spell: any_spell | words | string
             enchant: _open_bracket (any_spell | words | string) _close_bracket
+            second_enchant: _open_bracket (any_spell | words | string) _close_bracket
             
             target: (target_type | target_multi)
             target_type: target_self | target_boss | target_enemy | target_ally | target_aoe | target_named
@@ -114,6 +115,9 @@ class TreeToConfig(Transformer):
     def enchant(self, items):
         return self.spell(items)
 
+    def second_enchant(self, items):
+        return self.spell(items)
+    
     def move_pass(self, items):
         return NamedSpell("pass")
 
