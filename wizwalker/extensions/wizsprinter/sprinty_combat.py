@@ -644,6 +644,7 @@ class SprintyCombat(CombatHandler):
         if target == False:  # Wouldn't want a None to mess it up
             return False
 
+        fused = ""
         if only_enchantable and not await cur_card.is_enchanted():
             enchant_card = await self.try_get_spell(move_config.move.enchant, only_enchants=False)
             if enchant_card != "none":
@@ -661,12 +662,27 @@ class SprintyCombat(CombatHandler):
                     new_card_names = Counter([await card.name() for card in new_cards])
                     diff = list(new_card_names - previous_card_names)
                     if diff:
-                        move_config.move.card = NamedSpell(name=diff[0], is_literal=True)
+                        cur_card = await self.try_get_spell(NamedSpell(name=diff[0], is_literal=True), only_enchantable=only_enchantable)
+                        if move_config.move.second_enchant:
+                            second_enchant_card = await self.try_get_spell(move_config.move.second_enchant, only_enchants=False)
+                            if second_enchant_card != "none":
+                                if second_enchant_card is not None:
+                                    pre_enchant_count = len(await self.get_cards())
+                                    while len(await self.get_cards()) == pre_enchant_count:
+                                        await second_enchant_card.cast(cur_card, sleep_time=self.config.cast_time*2)
+                                        await asyncio.sleep(self.config.cast_time*2) # give it some time for card list to update
+                                    self.cur_card_count -= 1
+
+                        fused = diff[0]
 
                 elif enchant_card is None and (isinstance(move_config.move.enchant, TemplateSpell) and not move_config.move.enchant.optional):
                     return False
 
-        to_cast = await self.try_get_spell(move_config.move.card)
+        to_cast = None
+        if fused:
+            to_cast = await self.try_get_spell(NamedSpell(name=fused, is_literal=True))
+        else:
+            to_cast = await self.try_get_spell(move_config.move.card)
         if to_cast is None:
             return False  # this should not happen
         
