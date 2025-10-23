@@ -69,7 +69,7 @@ class Move:
         self.second_enchant = second_enchant
 
     def __repr__(self) -> str:
-        return f"Move(card={self.card}, enchant={self.enchant})"
+        return f"Move(card={self.card}, enchant={self.enchant}, second_enchant={self.second_enchant})"
 
 
 class TargetData:

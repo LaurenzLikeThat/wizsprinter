@@ -672,10 +672,16 @@ class SprintyCombat(CombatHandler):
                                         await second_enchant_card.cast(cur_card, sleep_time=self.config.cast_time*2)
                                         await asyncio.sleep(self.config.cast_time*2) # give it some time for card list to update
                                     self.cur_card_count -= 1
+                                
+                                elif second_enchant_card is None and (isinstance(move_config.move.second_enchant, TemplateSpell) and not move_config.move.second_enchant.optional):
+                                    return False
 
                         fused = diff[0]
 
                 elif enchant_card is None and (isinstance(move_config.move.enchant, TemplateSpell) and not move_config.move.enchant.optional):
+                    return False
+                
+                elif enchant_card is None and move_config.move.second_enchant:
                     return False
 
         to_cast = None
@@ -692,7 +698,10 @@ class SprintyCombat(CombatHandler):
                 try: 
                     await to_cast.cast(target, sleep_time=self.config.cast_time)
                     await asyncio.sleep(self.config.cast_time) # give it some time for card list to update
-                    to_cast = await self.try_get_spell(move_config.move.card)
+                    if fused:
+                        to_cast = await self.try_get_spell(NamedSpell(name=fused, is_literal=True))
+                    else:
+                        to_cast = await self.try_get_spell(move_config.move.card)
                 except ValueError:
                     break # Issue: 8
         except wizwalker.errors.WizWalkerMemoryError or ValueError:
