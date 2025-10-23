@@ -647,6 +647,7 @@ class SprintyCombat(CombatHandler):
         fused = ""
         if only_enchantable and not await cur_card.is_enchanted():
             enchant_card = await self.try_get_spell(move_config.move.enchant, only_enchants=False)
+            maybe_enchant_card = await self.get_card_vaguely_named(move_config.move.enchant.name)
             if enchant_card != "none":
                 if enchant_card is not None:
                     # Issue: 5. Casting wasn't that reliable
@@ -681,7 +682,7 @@ class SprintyCombat(CombatHandler):
                 elif enchant_card is None and (isinstance(move_config.move.enchant, TemplateSpell) and not move_config.move.enchant.optional):
                     return False
                 
-                elif enchant_card is None and move_config.move.second_enchant:
+                elif enchant_card is None and maybe_enchant_card is not None:
                     return False
 
         to_cast = None
