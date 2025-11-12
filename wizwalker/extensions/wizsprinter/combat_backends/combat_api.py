@@ -8,6 +8,7 @@ class TargetType(Enum):
     type_ally = auto()
     type_aoe = auto()
     type_named = auto()
+    type_select = auto()
 
 
 class SpellType(Enum):

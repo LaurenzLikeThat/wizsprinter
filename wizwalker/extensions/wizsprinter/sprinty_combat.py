@@ -602,6 +602,22 @@ class SprintyCombat(CombatHandler):
                     return res
             if res := await self.get_member_vaguely_named(data):
                 return res
+        elif ttype is TargetType.type_select:
+            members = []
+            if isinstance(data, list):
+                for sub in data:
+                    if isinstance(sub, tuple):
+                        sub_type, sub_extra = sub
+                        res = await self.try_get_config_target(TargetData(sub_type, sub_extra))
+                    else:
+                        res = await self.try_get_config_target(TargetData(sub))
+                    if res:
+                        # res could be a single member or list (AOE, nested select)
+                        if isinstance(res, list):
+                            members.extend(res)
+                        else:
+                            members.append(res)
+            return members if members else False
 
         return False
 
@@ -768,4 +784,3 @@ class SprintyCombat(CombatHandler):
 
                 self.had_first_round = True  # might go bad on throw
                 self.prev_card_count = self.cur_card_count
-

@@ -23,7 +23,7 @@ def get_sprinty_grammar():
             enchant: _open_bracket (any_spell | words | string) _close_bracket
             second_enchant: _open_bracket (any_spell | words | string) _close_bracket
             
-            target: (target_type | target_multi)
+            target: (target_type | target_select)
             target_type: target_self | target_boss | target_enemy | target_ally | target_aoe | target_named
             target_self: _spaced{"self"}
             target_boss: _spaced{"boss"}
@@ -31,7 +31,7 @@ def get_sprinty_grammar():
             target_ally: _spaced{"ally"} (_open_paren INT _close_paren)?
             target_aoe: _spaced{"aoe"}
             target_named: words | string
-            target_multi: _open_paren target_type [(_comma target_type)*]? _close_paren | target_type [(_comma target_type)*]?
+            target_select: _spaced{"select"} _open_paren target_type [(_comma target_type)*]? _close_paren | target_type [(_comma target_type)*]?
             
             round_specifier: _newlines? "{" expression "}" _newlines?
             
@@ -169,6 +169,9 @@ class TreeToConfig(Transformer):
 
     def target(self, items):
         return items[0]
+
+    def target_select(self, items):
+        return TargetType.type_select, items
 
     def any_spell(self, items):
         return items
