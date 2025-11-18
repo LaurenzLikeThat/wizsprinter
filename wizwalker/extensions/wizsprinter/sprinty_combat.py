@@ -690,7 +690,7 @@ class SprintyCombat(CombatHandler):
                 elif enchant_card is None and (isinstance(move_config.move.enchant, TemplateSpell) and not move_config.move.enchant.optional):
                     return False
                 
-                elif enchant_card is None and maybe_enchant_card:
+                elif enchant_card is None and enchant_is_grayed:
                     return False
 
         to_cast = None
