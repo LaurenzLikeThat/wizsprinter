@@ -12,7 +12,7 @@ def get_sprinty_grammar():
             ?start: config
             config: line+
             
-            line: round_specifier? move_config [(_pipe move_config)*]? [(_pipe move_config)*]? _NEWLINE?
+            line: round_specifier? move_config [(_pipe move_config)*]? _NEWLINE?
             
             move_config: move (_at target)?
             
