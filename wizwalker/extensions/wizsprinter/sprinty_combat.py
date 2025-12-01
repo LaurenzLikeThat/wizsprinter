@@ -646,6 +646,8 @@ class SprintyCombat(CombatHandler):
         elif ttype is TargetType.type_spell:
             if res := await self.try_get_spell(spell=data, castable=False):
                 return res
+            else:
+                return None
         elif ttype is TargetType.type_select:
             members = []
             if isinstance(data, list):
@@ -675,8 +677,14 @@ class SprintyCombat(CombatHandler):
             return success
         if type(move_config.move.card) is DrawSpell:
             for i in range(move_config.move.card.draw_amount):
+                card_count = len(await self.get_cards())
+                if card_count == 7:
+                    break
                 await self.draw_button()
-                await asyncio.sleep(self.config.cast_time*4) # give it some time for card list to update
+                while len(await self.get_cards()) == card_count:
+                    await asyncio.sleep(0.1)
+                self.cur_card_count += 1
+
             return True
         only_enchantable = move_config.move.enchant is not None
         cur_card = await self.try_get_spell(move_config.move.card, only_enchantable=only_enchantable)
@@ -701,9 +709,13 @@ class SprintyCombat(CombatHandler):
 
         if cur_card == "discard":
             #discard_card = await self.try_get_spell(target, castable=False)
-            #pre_discard_count = len(await self.get_cards())
+            if target is None:
+                return False
+            pre_discard_count = len(await self.get_cards())
             await target.discard()
-            await asyncio.sleep(self.config.cast_time*2) # give it some time for card list to update
+            while len(await self.get_cards()) == pre_discard_count:
+                await asyncio.sleep(0.1)
+            self.cur_card_count -= 1
             return True
 
         fused = ""
