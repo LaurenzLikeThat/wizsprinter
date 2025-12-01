@@ -410,6 +410,16 @@ class SprintyCombat(CombatHandler):
         except wizwalker.errors.ExceptionalTimeout:
             return []
 
+    async def get_num_card_windows(self) -> int:
+        hand = (await self.client.root_window.get_windows_with_name("Hand"))[0]
+        num = 0
+        for i in range(7):
+            card = await hand.get_child_by_name(f"Card{i+1}")
+            if await card.is_visible():
+                num += 1
+
+        return num
+
     async def get_card_named(self, name: str) -> Optional[CombatCard]:
         try:
             return await super().get_card_named(name)
@@ -607,6 +617,13 @@ class SprintyCombat(CombatHandler):
         else:
             raise NotImplementedError("Unknown spell config type")
 
+    async def disc_on_target(self, targ: CombatCard):
+        pre_discard_count = await self.get_num_card_windows()
+        await targ.discard()
+        while await self.get_num_card_windows() == pre_discard_count:
+            await asyncio.sleep(0.1)
+        self.cur_card_count -= 1
+
     async def try_get_config_target(self, target: TargetData) -> Union[bool, Optional[CombatMember]]:
         ttype = None
         data = None
@@ -644,10 +661,18 @@ class SprintyCombat(CombatHandler):
             if res := await self.get_member_vaguely_named(data):
                 return res
         elif ttype is TargetType.type_spell:
-            if res := await self.try_get_spell(spell=data, castable=False):
-                return res
-            else:
-                return None
+            #if type(data) is list:
+            #    res = []
+            #    for item in data:
+            #        #if card := await self.try_get_spell(spell=item, castable=False):
+            #        res.append(item)
+            #    return res
+            #else:
+            return data
+                #if res := await self.try_get_spell(spell=data, castable=False):
+                #    return res
+                #else:
+                #    return None
         elif ttype is TargetType.type_select:
             members = []
             if isinstance(data, list):
@@ -677,11 +702,11 @@ class SprintyCombat(CombatHandler):
             return success
         if type(move_config.move.card) is DrawSpell:
             for i in range(move_config.move.card.draw_amount):
-                card_count = len(await self.get_cards())
+                card_count = await self.get_num_card_windows()
                 if card_count == 7:
                     break
                 await self.draw_button()
-                while len(await self.get_cards()) == card_count:
+                while await self.get_num_card_windows() == card_count:
                     await asyncio.sleep(0.1)
                 self.cur_card_count += 1
 
@@ -708,14 +733,16 @@ class SprintyCombat(CombatHandler):
             return True
 
         if cur_card == "discard":
+            if type(target) is list:
+                for card in target:
+                    combat_card = await self.try_get_spell(card, castable=False)
+                    if combat_card is not None:
+                        await self.disc_on_target(combat_card)
+            else:
+                combat_card = await self.try_get_spell(target, castable=False)
+                if combat_card is not None:
+                    await self.disc_on_target(combat_card)
             #discard_card = await self.try_get_spell(target, castable=False)
-            if target is None:
-                return False
-            pre_discard_count = len(await self.get_cards())
-            await target.discard()
-            while len(await self.get_cards()) == pre_discard_count:
-                await asyncio.sleep(0.1)
-            self.cur_card_count -= 1
             return True
 
         fused = ""
@@ -771,8 +798,10 @@ class SprintyCombat(CombatHandler):
         
         # Issue: 5. Casting wasn't that reliable
         try:
+            if isinstance(target, Spell):
+                target = await self.try_get_spell(target, castable=False)
             while to_cast != None:
-                try: 
+                try:
                     await to_cast.cast(target, sleep_time=self.config.cast_time*2)
                     await asyncio.sleep(self.config.cast_time) # give it some time for card list to update
                     if fused:

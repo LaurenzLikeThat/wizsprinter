@@ -34,7 +34,7 @@ def get_sprinty_grammar():
             target_ally: _spaced{"ally"} (_open_paren INT _close_paren)?
             target_aoe: _spaced{"aoe"}
             target_named: words | string
-            target_spell: _spaced{"spell"} _open_paren (any_spell | words | string) _close_paren
+            target_spell: _spaced{"spell"} _open_paren (any_spell | words | string) [(_comma (any_spell | words | string))*]? _close_paren
             target_select: _spaced{"select"} _open_paren target_type [(_comma target_type)*]? _close_paren | target_type [(_comma target_type)*]?
             
             round_specifier: _newlines? "{" expression "}" _newlines?
@@ -158,6 +158,8 @@ class TreeToConfig(Transformer):
                                     n[index] = TargetData(target[0], target[1][1:-1], is_literal=True)
                                 elif type(target) is tuple:
                                     n[index] = TargetData(target[0], target[1])
+                                elif isinstance(target, Spell):
+                                    pass
                                 else:
                                     n[index] = TargetData(target)
                             movestargets[item] = TargetData(t, n)
@@ -190,6 +192,12 @@ class TreeToConfig(Transformer):
         return TargetType.type_self
 
     def target_spell(self, items):
+        if type(items) is list and len(items) > 1:
+            new_items = []
+            for item in items:
+                item = [item]
+                new_items.append(self.spell(item))
+            return TargetType.type_spell, new_items
         return TargetType.type_spell, self.spell(items)
 
     def target_boss(self, _):
