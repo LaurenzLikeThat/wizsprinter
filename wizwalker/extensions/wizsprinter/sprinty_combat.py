@@ -705,10 +705,14 @@ class SprintyCombat(CombatHandler):
                 card_count = await self.get_num_card_windows()
                 if card_count == 7:
                     break
-                await self.draw_button()
-                while await self.get_num_card_windows() == card_count:
-                    await asyncio.sleep(0.1)
-                self.cur_card_count += 1
+                if draw_windows := await self.client.root_window.get_windows_with_name("Draw"):
+                    draw_window = draw_windows[0]
+                    if await draw_window.is_control_grayed():
+                        break
+                    await self.draw_button()
+                    while await self.get_num_card_windows() == card_count:
+                        await asyncio.sleep(0.1)
+                    self.cur_card_count += 1
 
             return True
         only_enchantable = move_config.move.enchant is not None
@@ -728,8 +732,9 @@ class SprintyCombat(CombatHandler):
         if cur_card == "willcast":
             spell_checkbox_windows = await self.client.root_window.get_windows_with_type("SpellCheckBox")
             card = CombatCard(self, ([x for x in spell_checkbox_windows if await x.name() == "PetCard"])[0])
-            await card.cast(target)
-            await asyncio.sleep(self.config.cast_time*2)
+            if await card.is_castable():
+                await card.cast(target)
+                await asyncio.sleep(self.config.cast_time*2)
             return True
 
         if cur_card == "discard":
