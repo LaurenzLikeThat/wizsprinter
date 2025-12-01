@@ -676,7 +676,7 @@ class SprintyCombat(CombatHandler):
         if type(move_config.move.card) is DrawSpell:
             for i in range(move_config.move.card.draw_amount):
                 await self.draw_button()
-                await asyncio.sleep(self.config.cast_time*2) # give it some time for card list to update
+                await asyncio.sleep(self.config.cast_time*4) # give it some time for card list to update
             return True
         only_enchantable = move_config.move.enchant is not None
         cur_card = await self.try_get_spell(move_config.move.card, only_enchantable=only_enchantable)
@@ -761,7 +761,7 @@ class SprintyCombat(CombatHandler):
         try:
             while to_cast != None:
                 try: 
-                    await to_cast.cast(target, sleep_time=self.config.cast_time)
+                    await to_cast.cast(target, sleep_time=self.config.cast_time*2)
                     await asyncio.sleep(self.config.cast_time) # give it some time for card list to update
                     if fused:
                         to_cast = await self.try_get_spell(NamedSpell(name=fused, is_literal=True))
