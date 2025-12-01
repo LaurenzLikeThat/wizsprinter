@@ -32,12 +32,10 @@ class CombatConfigProvider(BaseCombatBackend):
         return None
 
     async def handle_no_cards_given(self):
-        raise RuntimeError(
-            f"Full config fail! \"{self.filename}\" might be empty or contains only explicit rounds. Consider adding a pass or something else")
+        raise RuntimeError(f"Full config fail! \"{self.filename}\" might be empty or contains only explicit rounds. Consider adding a pass or something else")
 
     def _expand_config(self, config: CombatConfig) -> CombatConfig:
-        old_rounds = [x for x in config.specific_rounds.values()] + \
-            config.infinite_rounds
+        old_rounds = [x for x in config.specific_rounds.values()] + config.infinite_rounds
         rounds = []
         for old_round in old_rounds:
             priorities = []
