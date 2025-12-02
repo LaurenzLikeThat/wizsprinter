@@ -803,10 +803,12 @@ class SprintyCombat(CombatHandler):
         
         # Issue: 5. Casting wasn't that reliable
         try:
-            if isinstance(target, Spell):
-                target = await self.try_get_spell(target, castable=False)
             while to_cast != None:
                 try:
+                    if isinstance(target, Spell):
+                        target = await self.try_get_spell(target, castable=False)
+                        await to_cast.cast(target, sleep_time=self.config.cast_time*2)
+                        break
                     await to_cast.cast(target, sleep_time=self.config.cast_time*2)
                     await asyncio.sleep(self.config.cast_time) # give it some time for card list to update
                     if fused:
