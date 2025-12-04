@@ -806,8 +806,13 @@ class SprintyCombat(CombatHandler):
             while to_cast != None:
                 try:
                     if isinstance(target, Spell):
+                        card_count = await self.get_num_card_windows()
                         target = await self.try_get_spell(target, castable=False)
-                        await to_cast.cast(target, sleep_time=self.config.cast_time*2)
+                        if target:
+                            await to_cast.cast(target, sleep_time=self.config.cast_time*2)
+                            while await self.get_num_card_windows() == card_count:
+                                await asyncio.sleep(0.1)
+                            self.cur_card_count -= 1
                         break
                     await to_cast.cast(target, sleep_time=self.config.cast_time*2)
                     await asyncio.sleep(self.config.cast_time) # give it some time for card list to update
