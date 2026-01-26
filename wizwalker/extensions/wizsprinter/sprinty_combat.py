@@ -809,6 +809,14 @@ class SprintyCombat(CombatHandler):
                         card_count = await self.get_num_card_windows()
                         target = await self.try_get_spell(target, castable=False)
                         if target:
+                            if await target.is_enchanted():
+                                is_enchant = False
+                                for e in await to_cast.get_spell_effects():
+                                    if await e.effect_target() is EffectTarget.spell:
+                                        is_enchant = True
+                                        break
+                                if is_enchant:
+                                    break
                             await to_cast.cast(target, sleep_time=self.config.cast_time*2)
                             while await self.get_num_card_windows() == card_count:
                                 await asyncio.sleep(0.1)
