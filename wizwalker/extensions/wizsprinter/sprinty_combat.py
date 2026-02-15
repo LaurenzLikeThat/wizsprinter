@@ -713,6 +713,7 @@ class SprintyCombat(CombatHandler):
                     while await self.get_num_card_windows() == card_count:
                         await asyncio.sleep(0.1)
                     self.cur_card_count += 1
+                    await asyncio.sleep(self.config.cast_time*2)
 
             return True
         only_enchantable = move_config.move.enchant is not None
@@ -743,10 +744,12 @@ class SprintyCombat(CombatHandler):
                     combat_card = await self.try_get_spell(card, castable=False)
                     if combat_card is not None:
                         await self.disc_on_target(combat_card)
+                        await asyncio.sleep(self.config.cast_time*2)
             else:
                 combat_card = await self.try_get_spell(target, castable=False)
                 if combat_card is not None:
                     await self.disc_on_target(combat_card)
+                    await asyncio.sleep(self.config.cast_time*2)
             #discard_card = await self.try_get_spell(target, castable=False)
             return True
 
