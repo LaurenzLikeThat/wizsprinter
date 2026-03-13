@@ -7,6 +7,7 @@ from wizwalker.combat import CombatMember
 from wizwalker.combat.card import CombatCard
 from wizwalker.memory import EffectTarget, SpellEffects, DynamicSpellEffect
 from wizwalker.memory.memory_objects.spell_effect import CompoundSpellEffect, ConditionalSpellEffect, HangingConversionSpellEffect
+from wizwalker.memory.memory_objects.enums import WindowFlags
 
 from .combat_backends.combat_config_parser import TargetType, TargetData, MoveConfig, TemplateSpell \
     , NamedSpell, SpellType, Spell, DrawSpell
@@ -741,7 +742,13 @@ class SprintyCombat(CombatHandler):
             if willcasted:
                 return True
             spell_checkbox_windows = await self.client.root_window.get_windows_with_type("SpellCheckBox")
-            card = CombatCard(self, ([x for x in spell_checkbox_windows if await x.name() == "PetCard"])[0])
+
+            wnd = ([x for x in spell_checkbox_windows if await x.name() == "PetCard"])[0]
+
+            if await wnd.flags() - WindowFlags.disabled >= 0:
+                return True
+
+            card = CombatCard(self, wnd)
             if await card.is_castable():
                 await card.cast(target)
                 await asyncio.sleep(self.config.cast_time*2)
