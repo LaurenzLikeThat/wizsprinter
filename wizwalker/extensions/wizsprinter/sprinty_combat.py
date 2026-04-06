@@ -357,6 +357,16 @@ async def card_requires_target_selection(card: CombatCard) -> bool:
     return False
 
 
+async def card_is_multi_target(card: CombatCard) -> bool:
+    """Check if a card uses multi-target selection (select enemies/allies individually)."""
+    effects = await get_inner_card_effects(card)
+    for e in effects:
+        eff_target = await e.effect_target()
+        if eff_target in (EffectTarget.multi_target_enemy, EffectTarget.multi_target_friendly):
+            return True
+    return False
+
+
 class SprintyCombat(CombatHandler):
     def __init__(self, client: wizwalker.client.Client, config_provider: BaseCombatBackend, handle_mouseless: bool = False):
         super().__init__(client)
@@ -781,6 +791,13 @@ class SprintyCombat(CombatHandler):
             ttype = move_config.target.target_type if move_config.target else None
             if ttype in (TargetType.type_aoe, TargetType.type_self, TargetType.type_ally):
                 return False
+
+        # Multi-target spell — wrap single target in list for confirm button flow
+        if await card_is_multi_target(cur_card):
+            if target is None:
+                return False  # Multi-target needs explicit targets
+            if isinstance(target, CombatMember):
+                target = [target]  # Wrap so cast() uses list branch (clicks confirm)
 
         if cur_card == "willcast":
             if willcasted:
