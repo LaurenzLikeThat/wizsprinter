@@ -358,8 +358,10 @@ async def card_requires_target_selection(card: CombatCard) -> bool:
 
 
 async def card_is_multi_target(card: CombatCard) -> bool:
-    """Check if a card uses multi-target selection (select enemies/allies individually)."""
-    effects = await get_inner_card_effects(card)
+    """Check if a card uses multi-target selection (select enemies/allies individually).
+    Uses top-level effects because multi_target_enemy/friendly is on the outer
+    CompoundSpellEffect, not on the unwrapped sub-effects."""
+    effects = await card.get_spell_effects()
     for e in effects:
         eff_target = await e.effect_target()
         if eff_target in (EffectTarget.multi_target_enemy, EffectTarget.multi_target_friendly):
