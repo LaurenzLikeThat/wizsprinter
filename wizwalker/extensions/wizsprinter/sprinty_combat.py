@@ -820,13 +820,15 @@ class SprintyCombat(CombatHandler):
         type_list = self._HANGING_CATEGORY_MAP[category]
         count = 0
         for effect in effects:
-            if await effect.effect_type() not in type_list:
+            etype = await effect.effect_type()
+            if etype not in type_list:
                 continue
             if disposition is not None:
                 edisp = await effect.disposition()
                 if edisp != HangingDisposition.both and edisp != disposition:
                     continue
             count += 1
+        print(f"[COND-DBG] _count_hanging_effects: category={category}, disposition={disposition}, total_effects={len(effects)}, matched={count}")
         return count
 
     def _compare(self, actual: float, op: ComparisonOp, val: float) -> bool:
@@ -868,6 +870,7 @@ class SprintyCombat(CombatHandler):
         try:
             target = await self.resolve_condition_target(condition.target)
             if target is None:
+                print(f"[COND-DBG] evaluate_condition: target is None for {condition}")
                 return False
 
             agg = condition.target.aggregation
@@ -878,8 +881,11 @@ class SprintyCombat(CombatHandler):
                     return False
                 val = await self._read_member_attr(target, condition)
                 if val is None:
+                    print(f"[COND-DBG] evaluate_condition: attr read returned None for {condition}")
                     return False
-                return self._compare(val, condition.op, condition.value)
+                result = self._compare(val, condition.op, condition.value)
+                print(f"[COND-DBG] evaluate_condition: {condition.attribute}={val} {condition.op.value} {condition.value} -> {result}")
+                return result
 
             # Group aggregation
             members = target if isinstance(target, list) else [target]
@@ -913,7 +919,8 @@ class SprintyCombat(CombatHandler):
                 return self._compare(total / count, condition.op, condition.value)
 
             return False
-        except Exception:
+        except Exception as e:
+            print(f"[COND-DBG] evaluate_condition EXCEPTION: {type(e).__name__}: {e}")
             return False
 
     async def _get_member_index(self, member: CombatMember) -> Optional[int]:
@@ -954,6 +961,7 @@ class SprintyCombat(CombatHandler):
             return False
 
     async def try_execute_config(self, move_config: MoveConfig, willcasted: bool = False) -> bool | Tuple[bool, bool]:
+        print(f"[COND-DBG] try_execute_config: condition={move_config.condition}, move={move_config.move}")
         if move_config.condition is not None:
             if not await self.evaluate_condition(move_config.condition):
                 return False
