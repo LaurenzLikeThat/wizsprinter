@@ -10,6 +10,8 @@ class TargetType(Enum):
     type_named = auto()
     type_spell = auto()
     type_select = auto()
+    type_enemies = auto()
+    type_allies = auto()
 
 
 class SpellType(Enum):
@@ -40,6 +42,47 @@ class SpellType(Enum):
     type_mod_damage = auto()
     type_mod_heal = auto()
     type_mod_pierce = auto()
+    #Card requirement filtering
+    type_req_met = auto()
+
+
+class ComparisonOp(Enum):
+    lt = "<"
+    le = "<="
+    gt = ">"
+    ge = ">="
+    eq = "=="
+    ne = "!="
+
+
+class AggregationMode(Enum):
+    agg_any = "any"
+    agg_all = "all"
+    agg_avg = "avg"
+
+
+class ConditionTarget:
+    def __init__(self, target_type: TargetType, index: int = None, aggregation: AggregationMode = None):
+        self.target_type = target_type
+        self.index = index
+        self.aggregation = aggregation
+
+    def __repr__(self) -> str:
+        agg = f", aggregation={self.aggregation}" if self.aggregation else ""
+        return f"ConditionTarget(target_type={self.target_type}, index={self.index}{agg})"
+
+
+class Condition:
+    def __init__(self, target: ConditionTarget, attribute: str, op: ComparisonOp, value: float, is_percent: bool = False):
+        self.target = target
+        self.attribute = attribute
+        self.op = op
+        self.value = value
+        self.is_percent = is_percent
+
+    def __repr__(self) -> str:
+        pct = "%" if self.is_percent else ""
+        return f"Condition({self.target}.{self.attribute} {self.op.value} {self.value}{pct})"
 
 
 class Spell:
@@ -92,12 +135,14 @@ class TargetData:
 
 
 class MoveConfig:
-    def __init__(self, move: Union[Move, List], target: Union[TargetData, List] = None):
+    def __init__(self, move: Union[Move, List], target: Union[TargetData, List] = None, condition: Condition = None):
         self.move = move
         self.target = target
+        self.condition = condition
 
     def __repr__(self) -> str:
-        return f"MoveConfig(move={self.move}, target={self.target})"
+        cond = f", condition={self.condition}" if self.condition else ""
+        return f"MoveConfig(move={self.move}, target={self.target}{cond})"
 
 
 class PriorityLine:

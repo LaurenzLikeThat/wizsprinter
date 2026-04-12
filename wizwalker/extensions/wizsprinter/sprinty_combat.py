@@ -7,10 +7,11 @@ from wizwalker.combat import CombatMember
 from wizwalker.combat.card import CombatCard
 from wizwalker.memory import EffectTarget, SpellEffects, DynamicSpellEffect
 from wizwalker.memory.memory_objects.spell_effect import CompoundSpellEffect, ConditionalSpellEffect, HangingConversionSpellEffect
-from wizwalker.memory.memory_objects.enums import WindowFlags
+from wizwalker.memory.memory_objects.enums import WindowFlags, HangingDisposition
+from wizwalker.memory.memory_objects.conditionals import charm_effect_types, ward_effect_types, over_time_effect_types
 
 from .combat_backends.combat_config_parser import TargetType, TargetData, MoveConfig, TemplateSpell \
-    , NamedSpell, SpellType, Spell, DrawSpell
+    , NamedSpell, SpellType, Spell, DrawSpell, Condition, ConditionTarget, ComparisonOp, AggregationMode
 from .combat_backends.backend_base import BaseCombatBackend
 
 from enum import Enum, auto
@@ -314,10 +315,19 @@ async def is_req_satisfied(effect: DynamicSpellEffect, req: SpellType, template:
 async def does_card_contain_reqs(card: CombatCard, template: TemplateSpell) -> bool:
     effects = await get_inner_card_effects(card)
     is_aoe_req = SpellType.type_aoe in template.requirements
+    # req_met is a meta-filter checked post-selection, not per-effect
+    reqs_to_check = [r for r in template.requirements if r is not SpellType.type_req_met]
     matched_reqs = 0
-    needed_matches = len(template.requirements)
+    needed_matches = len(reqs_to_check)
 
-    for req in template.requirements:
+    if SpellType.type_damage in template.requirements:
+        card_name = await card.name()
+        eff_info = []
+        for e in effects:
+            eff_info.append(f"{await e.effect_type()}@{await e.effect_target()}")
+        print(f"[MT-DBG] does_card_contain_reqs: card={card_name}, reqs={template.requirements}, effects=[{', '.join(eff_info)}]")
+
+    for req in reqs_to_check:
         for e in effects:
             req_status = await is_req_satisfied(e, req, template, is_aoe_req)
             match req_status:
@@ -331,6 +341,18 @@ async def does_card_contain_reqs(card: CombatCard, template: TemplateSpell) -> b
                 case _:
                     pass
 
+
+    # Multi-target spells use an effect type not in wizwalker's enum (shows as
+    # invalid_spell_effect). Infer spell category from the multi-target effect target.
+    if matched_reqs < needed_matches:
+        for e in effects:
+            eff_target = await e.effect_target()
+            if eff_target == EffectTarget.multi_target_enemy and SpellType.type_damage in template.requirements:
+                matched_reqs += 1
+                break
+            elif eff_target == EffectTarget.multi_target_friendly and SpellType.type_heal in template.requirements:
+                matched_reqs += 1
+                break
 
     if matched_reqs == needed_matches and is_aoe_req:
         # Reject cards that have single-target damage effects — they require
@@ -347,12 +369,16 @@ async def does_card_contain_reqs(card: CombatCard, template: TemplateSpell) -> b
 
 async def card_requires_target_selection(card: CombatCard) -> bool:
     """Check if a card requires the player to select a target (i.e. not a true AOE).
-    Returns True if any damage/steal effect targets a single enemy rather than a team."""
+    Returns True if any damage/steal effect targets a single enemy rather than a team,
+    or if the card is a multi-target enemy spell."""
     effects = await get_inner_card_effects(card)
     for e in effects:
         eff_type = await e.effect_type()
         eff_target = await e.effect_target()
         if eff_type in damage_effects and eff_target in enemy_targets and eff_target not in aoe_targets:
+            return True
+        # Multi-target enemy spells also require target selection
+        if eff_target == EffectTarget.multi_target_enemy:
             return True
     return False
 
@@ -707,6 +733,12 @@ class SprintyCombat(CombatHandler):
             else:
                 if ally := await self.get_nth_ally_or_none(data):
                     return ally
+        elif ttype is TargetType.type_enemies:
+            enemies = await self.get_enemies()
+            return enemies if enemies else False
+        elif ttype is TargetType.type_allies:
+            allies = [await self.get_client_member()] + await self.get_allies()
+            return allies if allies else False
         elif ttype is TargetType.type_named:
             if target.is_literal:
                 if res := await self.get_member_named(data):
@@ -747,7 +779,185 @@ class SprintyCombat(CombatHandler):
 
         return False
 
+    async def resolve_condition_target(self, cond_target: ConditionTarget) -> Union[Optional[CombatMember], List[CombatMember]]:
+        ttype = cond_target.target_type
+        index = cond_target.index
+        if ttype is TargetType.type_self:
+            return await self.get_client_member()
+        elif ttype is TargetType.type_boss:
+            return await self.get_boss_or_none()
+        elif ttype is TargetType.type_enemy:
+            return await self.get_nth_enemy_or_none(index if index is not None else 0)
+        elif ttype is TargetType.type_ally:
+            return await self.get_nth_ally_or_none(index if index is not None else 0)
+        elif ttype is TargetType.type_enemies:
+            return await self.get_enemies()
+        elif ttype is TargetType.type_allies:
+            return [await self.get_client_member()] + await self.get_allies()
+        return None
+
+    _HANGING_ATTRS = {
+        "charms":              ("charm",    None),
+        "beneficial_charms":   ("charm",    HangingDisposition.beneficial),
+        "harmful_charms":      ("charm",    HangingDisposition.harmful),
+        "wards":               ("ward",     None),
+        "beneficial_wards":    ("ward",     HangingDisposition.beneficial),
+        "harmful_wards":       ("ward",     HangingDisposition.harmful),
+        "over_time":           ("ot",       None),
+        "beneficial_over_time":("ot",       HangingDisposition.beneficial),
+        "harmful_over_time":   ("ot",       HangingDisposition.harmful),
+    }
+
+    _HANGING_CATEGORY_MAP = {
+        "charm": charm_effect_types,
+        "ward":  ward_effect_types,
+        "ot":    over_time_effect_types,
+    }
+
+    async def _count_hanging_effects(self, member: CombatMember, category: str, disposition: Optional[HangingDisposition]) -> int:
+        participant = await member.get_participant()
+        effects = await participant.hanging_effects()
+        type_list = self._HANGING_CATEGORY_MAP[category]
+        count = 0
+        for effect in effects:
+            if await effect.effect_type() not in type_list:
+                continue
+            if disposition is not None:
+                edisp = await effect.disposition()
+                if edisp != HangingDisposition.both and edisp != disposition:
+                    continue
+            count += 1
+        return count
+
+    def _compare(self, actual: float, op: ComparisonOp, val: float) -> bool:
+        if op is ComparisonOp.lt:
+            return actual < val
+        elif op is ComparisonOp.le:
+            return actual <= val
+        elif op is ComparisonOp.gt:
+            return actual > val
+        elif op is ComparisonOp.ge:
+            return actual >= val
+        elif op is ComparisonOp.eq:
+            return actual == val
+        elif op is ComparisonOp.ne:
+            return actual != val
+        return False
+
+    async def _read_member_attr(self, member: CombatMember, condition: Condition) -> Optional[float]:
+        # Check for hanging effect pseudo-attributes first
+        if condition.attribute in self._HANGING_ATTRS:
+            category, disposition = self._HANGING_ATTRS[condition.attribute]
+            return float(await self._count_hanging_effects(member, category, disposition))
+
+        attr_fn = getattr(member, condition.attribute, None)
+        if attr_fn is None or not callable(attr_fn):
+            return None
+        actual = await attr_fn()
+        if condition.is_percent:
+            max_fn = getattr(member, f"max_{condition.attribute}", None)
+            if max_fn is None or not callable(max_fn):
+                return None
+            max_val = await max_fn()
+            if max_val == 0:
+                return None
+            actual = (actual / max_val) * 100
+        return float(actual)
+
+    async def evaluate_condition(self, condition: Condition) -> bool:
+        try:
+            target = await self.resolve_condition_target(condition.target)
+            if target is None:
+                return False
+
+            agg = condition.target.aggregation
+
+            # Single member (no aggregation)
+            if agg is None:
+                if isinstance(target, list):
+                    return False
+                val = await self._read_member_attr(target, condition)
+                if val is None:
+                    return False
+                return self._compare(val, condition.op, condition.value)
+
+            # Group aggregation
+            members = target if isinstance(target, list) else [target]
+            if not members:
+                return False
+
+            if agg is AggregationMode.agg_any:
+                for m in members:
+                    val = await self._read_member_attr(m, condition)
+                    if val is not None and self._compare(val, condition.op, condition.value):
+                        return True
+                return False
+
+            elif agg is AggregationMode.agg_all:
+                for m in members:
+                    val = await self._read_member_attr(m, condition)
+                    if val is None or not self._compare(val, condition.op, condition.value):
+                        return False
+                return True
+
+            elif agg is AggregationMode.agg_avg:
+                total = 0.0
+                count = 0
+                for m in members:
+                    val = await self._read_member_attr(m, condition)
+                    if val is not None:
+                        total += val
+                        count += 1
+                if count == 0:
+                    return False
+                return self._compare(total / count, condition.op, condition.value)
+
+            return False
+        except Exception:
+            return False
+
+    async def _get_member_index(self, member: CombatMember) -> Optional[int]:
+        members = await self.get_members()
+        for i, m in enumerate(members):
+            if await m.owner_id() == await member.owner_id():
+                return i
+        return None
+
+    async def card_requirements_met(self, card: CombatCard, target_member: Optional[CombatMember]) -> bool:
+        """Check if a card's ConditionalSpellEffect requirements are satisfied.
+        Returns True if the card has no conditional effects, or if at least one
+        conditional branch's requirements are met."""
+        try:
+            effects = await card.get_spell_effects()
+            has_conditional = False
+            for effect in effects:
+                if not isinstance(effect, ConditionalSpellEffect):
+                    continue
+                has_conditional = True
+                # Determine target index for requirement evaluation
+                target_idx = 0
+                if target_member is not None:
+                    idx = await self._get_member_index(target_member)
+                    if idx is not None:
+                        target_idx = idx
+                data = {"combat": self, "target_idx": target_idx}
+                # Check if any conditional branch is satisfied
+                for element in await effect.elements():
+                    req_list = await element.reqs()
+                    if await req_list._evaluate(data):
+                        return True
+                # All branches failed for this conditional effect
+                return False
+            # No conditional effects on this card — always satisfied
+            return True
+        except Exception:
+            return False
+
     async def try_execute_config(self, move_config: MoveConfig, willcasted: bool = False) -> bool | Tuple[bool, bool]:
+        if move_config.condition is not None:
+            if not await self.evaluate_condition(move_config.condition):
+                return False
+
         if type(move_config.move) is list and type(move_config.target) is list:
             success = False
             willcasted = False
@@ -777,6 +987,7 @@ class SprintyCombat(CombatHandler):
         only_enchantable = move_config.move.enchant is not None
         cur_card = await self.try_get_spell(move_config.move.card, only_enchantable=only_enchantable)
         if cur_card is None:
+            print(f"[MT-DBG] cur_card is None for {move_config.move.card}")
             return False
 
         if cur_card == "pass":
@@ -786,20 +997,35 @@ class SprintyCombat(CombatHandler):
         target = await self.try_get_config_target(move_config.target)
 
         if target == False:  # Wouldn't want a None to mess it up
+            print(f"[MT-DBG] target is False for {move_config.target}")
             return False
 
         # Card has single-target damage — only compatible with enemy/boss targeting
         if await card_requires_target_selection(cur_card):
             ttype = move_config.target.target_type if move_config.target else None
             if ttype in (TargetType.type_aoe, TargetType.type_self, TargetType.type_ally):
+                print(f"[MT-DBG] target_selection rejected: ttype={ttype}")
                 return False
 
         # Multi-target spell — wrap single target in list for confirm button flow
-        if await card_is_multi_target(cur_card):
+        # Multi-target spell — wrap single target in list for confirm button flow.
+        # Use "enemies" / "allies" targets to select all, or select(...) for specific targets.
+        is_mt = await card_is_multi_target(cur_card)
+        print(f"[MT-DBG] card={await cur_card.name()}, is_multi_target={is_mt}, target={target}, target_type={type(target).__name__}")
+        if is_mt:
             if target is None:
+                print(f"[MT-DBG] multi-target but target is None")
                 return False  # Multi-target needs explicit targets
             if isinstance(target, CombatMember):
                 target = [target]  # Wrap so cast() uses list branch (clicks confirm)
+                print(f"[MT-DBG] wrapped single target in list")
+
+        # req_met check: if the spell template requires req_met, verify the card's
+        # ConditionalSpellEffect requirements are satisfied for the target.
+        if isinstance(move_config.move.card, TemplateSpell) and SpellType.type_req_met in move_config.move.card.requirements:
+            req_target = target[0] if isinstance(target, list) else target
+            if not await self.card_requirements_met(cur_card, req_target if isinstance(req_target, CombatMember) else None):
+                return False
 
         if cur_card == "willcast":
             if willcasted:
@@ -951,6 +1177,9 @@ class SprintyCombat(CombatHandler):
             self.config.attach_combat(self) # For safety. Could probably also do this in handle_comba
 
             real_round = await self.round_number()
+            _dbg_castable = await self.get_castable_cards()
+            _dbg_names = [await c.name() for c in _dbg_castable]
+            print(f"[MT-DBG] castable cards: {_dbg_names}")
             self.cur_card_count = len(await self.get_cards()) + (await self.get_card_counts())[0]
                 
             if not self.had_first_round:
