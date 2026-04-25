@@ -16,7 +16,10 @@ def get_sprinty_grammar():
             
             move_config: condition? move (_at target)? [(_and move (_at target)?)*]?
 
-            condition: _cond_open cond_target "." cond_attr cond_op cond_value _cond_close
+            condition: _cond_open cond_clause (_cond_and cond_clause)* _cond_close
+            cond_clause: cond_target "." cond_attr cond_op cond_value
+            COND_AND: "&&"
+            _cond_and: _newlines? COND_AND _newlines?
 
             cond_target: cond_target_self | cond_target_boss | cond_target_enemy | cond_target_ally | cond_target_enemies | cond_target_allies
             cond_target_self: _spaced{"self"}
@@ -175,9 +178,20 @@ class TreeToConfig(Transformer):
     def move(self, items):
         return Move(*items)
 
-    def condition(self, items):
+    def cond_clause(self, items):
         target, attr, op, value = items
         return Condition(target, attr, op, *value)
+
+    def condition(self, items):
+        # Filter out the COND_AND tokens (lark keeps them in the child list
+        # because the rule references a named terminal). Items that are
+        # Condition instances are the actual clauses; a single clause stays
+        # as a bare Condition for backward compatibility, multiples wrap in
+        # AllCondition (logical AND).
+        clauses = [c for c in items if isinstance(c, Condition)]
+        if len(clauses) == 1:
+            return clauses[0]
+        return AllCondition(clauses)
 
     def cond_target(self, items):
         return items[0]
@@ -233,7 +247,7 @@ class TreeToConfig(Transformer):
 
     def move_config(self, items):
         condition = None
-        if items and isinstance(items[0], Condition):
+        if items and isinstance(items[0], (Condition, AllCondition)):
             condition = items.pop(0)
 
         movestargets = {}

@@ -11,7 +11,7 @@ from wizwalker.memory.memory_objects.enums import WindowFlags, HangingDispositio
 from wizwalker.memory.memory_objects.conditionals import charm_effect_types, ward_effect_types, over_time_effect_types, aura_effect_types
 
 from .combat_backends.combat_config_parser import TargetType, TargetData, MoveConfig, TemplateSpell \
-    , NamedSpell, SpellType, Spell, DrawSpell, Condition, ConditionTarget, ComparisonOp, AggregationMode \
+    , NamedSpell, SpellType, Spell, DrawSpell, Condition, AllCondition, ConditionTarget, ComparisonOp, AggregationMode \
     , GambitSpec, ClearSpec, EchoSpec, SwapSpec, HangingType, HANGING_CATEGORIES, hanging_type_info
 from wizwalker.memory.memory_objects.conditionals import ReqHangingAura
 from .combat_backends.backend_base import BaseCombatBackend
@@ -901,7 +901,13 @@ class SprintyCombat(CombatHandler):
             actual = (actual / max_val) * 100
         return float(actual)
 
-    async def evaluate_condition(self, condition: Condition) -> bool:
+    async def evaluate_condition(self, condition) -> bool:
+        # AllCondition: short-circuit AND over its clauses.
+        if isinstance(condition, AllCondition):
+            for clause in condition.clauses:
+                if not await self.evaluate_condition(clause):
+                    return False
+            return True
         try:
             target = await self.resolve_condition_target(condition.target)
             if target is None:

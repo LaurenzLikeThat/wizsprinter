@@ -91,6 +91,18 @@ class Condition:
         return f"Condition({self.target}.{self.attribute} {self.op.value} {self.value}{pct})"
 
 
+class AllCondition:
+    """Composite predicate that holds iff every clause holds (logical AND).
+    Produced by the parser when a `?(...)` block contains two or more clauses
+    joined by `&&`. A single-clause `?(...)` still returns a plain Condition,
+    so existing strategies are unaffected."""
+    def __init__(self, clauses: List[Condition]):
+        self.clauses = clauses
+
+    def __repr__(self) -> str:
+        return f"AllCondition([{', '.join(repr(c) for c in self.clauses)}])"
+
+
 class Spell:
     pass
 
